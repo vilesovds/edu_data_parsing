@@ -8,6 +8,10 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support.select import By
 from selenium.webdriver.support import expected_conditions as EC
+from sqlalchemy import create_engine, Column, Integer, Float, String
+from sqlalchemy_utils import URLType
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 import os
 import logging
 import json
@@ -24,15 +28,49 @@ ch.setLevel(logging.DEBUG)
 ch.setFormatter(logging.Formatter(FORMAT))
 logger.addHandler(ch)
 
+Base = declarative_base()
+
+
+class HitGood(Base):
+    __tablename__ = 'hit_goods'
+    id = Column(Integer, primary_key=True)
+    shop = Column(String)
+    url = Column(URLType)
+    name = Column(String)
+    vendor = Column(String)
+    price = Column(Float)
+
+    def __init__(self, shop, url, name, vendor, price):
+        self.shop = shop
+        self.url = url
+        self.name = name
+        self.vendor = vendor
+        self.price = price
+
+    def __init__(self, data: dict):
+        self.update(data)
+
+    def update(self, data: dict):
+        self.shop = data.get('shop')
+        self.url = data.get('url')
+        self.name = data.get('name')
+        self.vendor = data.get('vendor')
+        self.price = data.get('price', 0.0)
+
+    def __repr__(self):
+        return f"<HitGood(\r\n\tshop: {self.shop}\r\n\tname: {self.name}\r\n\tvendor: {self.vendor}\r\n" \
+               f"\tprice: {self.price}\r\n\turl: {self.url}\r\n)>"
+
 
 def parse_mvideo(driver):
-    url = "https://www.mvideo.ru/?hits"
+    base_url = "https://www.mvideo.ru"
+    url = base_url + "?hits"
 
     def _get_data_from_good(good_item):
-        res = {}
+        res = {'shop': 'mvideo'}
         link = good_item.find_element_by_xpath('.//div[@class="fl-product-tile__description '
                                                'c-product-tile__description"]//h3/a')
-        res['url'] = url + link.get_attribute("href")
+        res['url'] = link.get_attribute("href")
         info = json.loads(link.get_attribute('data-product-info'))  # get additional product info
         logger.debug(info)
         res['name'] = info['productName']
@@ -45,24 +83,25 @@ def parse_mvideo(driver):
                     'gallery-layout_product-set grid-view"]'
     try:
         driver.get(url)
+        # wanted container
         gallery = WebDriverWait(driver, 10).until(
             EC.visibility_of_element_located((By.XPATH, gallery_xpath))
         )
         hits_carousel = gallery.find_element_by_xpath('.//ul[@class="accessories-product-list"]')
+        # scroll to element
         ActionChains(driver).move_to_element(hits_carousel).perform()
         # get counts of hits goods
         total_count = json.loads(hits_carousel.get_attribute("data-init-param"))['ajaxContentLoad']['total']
         logger.debug(f' total_count: {total_count}')
         # find button next
-        # next_btn = gallery.find_element_by_xpath('.//a[contains(@class, "next-btn")]')
+        next_btn = gallery.find_element_by_xpath('.//a[contains(@class, "next-btn")]')
 
         goods = hits_carousel.find_elements_by_tag_name('li')
-        logger.debug(len(goods))
+        logger.debug(f"goods count: {len(goods)}")
+        # waiting needed count of li elements
         while len(goods) < total_count:
-            next_btn = gallery.find_element_by_xpath('.//a[contains(@class, "next-btn")]')
-            ActionChains(driver).move_to_element(next_btn).perform()
-            logger.debug(next_btn.is_displayed())
             next_btn.click()
+            driver.implicitly_wait(1)  # its help waiting render
             goods = hits_carousel.find_elements_by_tag_name('li')
             logger.debug(len(goods))
 
@@ -79,14 +118,26 @@ def parse_onlinetrade(driver):
     return driver.current_url
 
 
-def bd_save(data: list):
-    print(data)
+def bd_save(data: list, engine):
+    Session = sessionmaker(bind=engine)
+    with Session() as session:
+        for item in data:
+            # url as uniq key. Update if found and add otherwise
+            found = session.query(HitGood).filter(HitGood.url == item.get('url')).first()
+            if found:
+                found.update(item)
+            else:
+                session.add(HitGood(item))
+        session.commit()
 
 
 if __name__ == "__main__":
     driver = get_driver(os.environ.get('DRIVER_PATH'))
+    engine = create_engine(os.environ.get('DATA_BASE'))
+    Base.metadata.create_all(engine)
+
     mv_data = parse_mvideo(driver)
-    bd_save(mv_data)
+    bd_save(mv_data, engine)
     # ot_data = parse_onlinetrade(driver)
     # bd_save(ot_data)
     driver.close()
