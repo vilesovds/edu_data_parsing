@@ -16,17 +16,10 @@ import os
 import logging
 import json
 
-import io
-from PIL import Image
 
 FORMAT = '%(levelname)s:%(name)s:%(funcName)s:%(lineno)d: %(message)s'
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-
-ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
-ch.setFormatter(logging.Formatter(FORMAT))
-logger.addHandler(ch)
 
 Base = declarative_base()
 
@@ -108,14 +101,59 @@ def parse_mvideo(driver):
         result = [_get_data_from_good(good) for good in goods]
     except Exception as err:
         logger.error(err)
-
     return result
 
 
 def parse_onlinetrade(driver):
     url = "https://www.onlinetrade.ru/"
-    driver.get(url)
-    return driver.current_url
+    h2_hits_xpath = '//*[text()="Хиты продаж"]'
+
+    def _parse_link(item_url):
+        data = {'shop': 'onlinetrade', 'url': item_url}
+        driver.open_in_new_tab(item_url)
+        # product card
+        card = driver.find_element_by_xpath('//div[@class="productPage__card"]')
+        name = card.find_element_by_xpath('.//h1[@itemprop="name"]').text
+        logger.debug(f'good name: {name}')
+        data['name'] = name
+        price = int(card.find_element_by_xpath('.//span[@itemprop="price"]').get_attribute('content'))
+        logger.debug(f'price: {price}')
+        data['price'] = price
+        brand = card.find_element_by_xpath('.//div[@class="descr__techicalBrand__brandLink"]/a').text
+        logger.debug(f'brand: {brand}')
+        data['vendor'] = brand
+        driver.close_but_index(0)  # close tabs but not root
+        return data
+
+    res = []
+    try:
+        driver.get(url)
+        h2_hits = driver.find_element_by_xpath(h2_hits_xpath)
+        container = h2_hits.find_element_by_xpath('../..')
+        swiper_manage = container.find_element_by_xpath('.//div[@class="swiper__manage"]')
+
+        swiper_container = container.find_element_by_xpath('.//div[contains(@class, "swiper-container")]')
+
+        # go to elements
+        ActionChains(driver).move_to_element(swiper_container).perform()
+
+        bullets = swiper_manage.find_elements_by_xpath('.//span[contains(@class, "swiper-pagination-bullet")]')
+        logger.debug(f'found {len(bullets)} bullet(s)\r\n')
+        parsed_urls = []  # stack
+        for bullet in bullets:
+            # switch swiper
+            bullet.click()
+            # collect slides
+            slides = swiper_container.find_elements_by_xpath('.//div[@class="swiper-slide indexGoods__item"]')
+            logger.debug(f'found {len(slides)} slides\r\n')
+            for slide in slides:
+                link = slide.find_element_by_tag_name('a').get_attribute('href')
+                if link not in parsed_urls:  # ignore already parsed
+                    res.append(_parse_link(link))
+                    parsed_urls.append(link)
+    except Exception as err:
+        logger.error(err)
+    return res
 
 
 def bd_save(data: list, engine):
@@ -132,12 +170,20 @@ def bd_save(data: list, engine):
 
 
 if __name__ == "__main__":
+    # get environment settings
     driver = get_driver(os.environ.get('DRIVER_PATH'))
     engine = create_engine(os.environ.get('DATA_BASE'))
+
+    # setup logging
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    ch.setFormatter(logging.Formatter(FORMAT))
+    logger.addHandler(ch)
+
     Base.metadata.create_all(engine)
 
     mv_data = parse_mvideo(driver)
     bd_save(mv_data, engine)
-    # ot_data = parse_onlinetrade(driver)
-    # bd_save(ot_data)
+    ot_data = parse_onlinetrade(driver)
+    bd_save(ot_data, engine)
     driver.close()
