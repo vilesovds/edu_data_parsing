@@ -2,6 +2,25 @@ from selenium import webdriver
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 
 
+class ExtChrome(webdriver.Chrome):
+    def __init__(self, *args, **kwargs):
+        super(ExtChrome, self).__init__(*args, **kwargs)
+
+    def open_in_new_tab(self, new_url):
+        self.execute_script("window.open('');")
+        self.switch_to.window(self.window_handles[-1])
+        self.get(new_url)
+
+    def close_but_index(self, index):
+        wh = self.window_handles
+        wh.remove(self.window_handles[index])
+        for w in wh:
+            self.switch_to.window(w)
+            self.close()
+        # switch back
+        self.switch_to.window(self.window_handles[0])
+
+
 def get_driver(driver_path, window_size=None, headless=False, user_agent=None):
     # options
     options = webdriver.ChromeOptions()
@@ -24,6 +43,6 @@ def get_driver(driver_path, window_size=None, headless=False, user_agent=None):
     caps = DesiredCapabilities().CHROME
     caps["pageLoadStrategy"] = "eager"  # interactive
 
-    return webdriver.Chrome(desired_capabilities=caps,
-                            executable_path=driver_path,
-                            options=options)
+    return ExtChrome(desired_capabilities=caps,
+                     executable_path=driver_path,
+                     options=options)
