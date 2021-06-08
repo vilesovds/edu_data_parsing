@@ -187,3 +187,4 @@ if __name__ == "__main__":
     ot_data = parse_onlinetrade(driver)
     bd_save(ot_data, engine)
     driver.close()
+    driver.quit()
