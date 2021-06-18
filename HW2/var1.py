@@ -24,10 +24,6 @@ from pprint import pprint
 executor = ProcessPoolExecutor()
 
 superjob_url = "https://www.superjob.ru/"
-hh_url = "https://hh.ru/search/vacancy"
-
-headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
-                         'Chrome/91.0.4472.106 Safari/537.36'}
 
 
 async def async_run(task_func, *args):
@@ -44,82 +40,90 @@ async def async_run(task_func, *args):
     )
 
 
-def hh_salary_parse(salary: str):
-    salary = salary.replace(u'\xa0', '')
-
-    min = max = math.nan
-    currency = cur_type = 'none'
-    if salary != 'з/п не указана':
-        lst = salary.split(' ')
-        if lst[-1] == 'руки':
-            cur_type = 'net'
-            for _ in range(2):
-                lst.pop()
-        else:
-            cur_type = 'gross'
-            for _ in range(3):
-                lst.pop()
-
-        currency = lst.pop()
-        if len(lst) == 4:
-            min, max = lst[1], lst[3]
-        elif lst[0] == 'от':
-            min = lst[1]
-        else:
-            max = lst[1]
-    return float(min), float(max), currency, cur_type
+class BaseParser:
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
+                             'Chrome/91.0.4472.106 Safari/537.36'}
+    search_url = 'http://example.com'
 
 
-def hh_bs_parse_dom(content):
-    res = {}
-    dom = bs(content, 'html.parser')
-    title = dom.find('div', {'class': 'vacancy-title'})
-    res['name'] = title.findChildren()[0].get_text()
+class HHruParser(BaseParser):
+    def __init__(self):
+        self.session = None
+        self.search_url = "https://hh.ru/search/vacancy"
 
-    res['salary_min'], res['salary_max'], res['salary_currency'], res['salary_type'] = hh_salary_parse(
-        title.findChildren()[1].get_text()
-    )
-    return res
+    async def _parse_page(self, url, params):
+        async with self.session.get(url, params=params) as resp:
+            content = await resp.text()
+            a_tags = bs(content, 'html.parser').find_all('a', {'class': 'bloko-link',
+                                                               'data-qa': 'vacancy-serp__vacancy-title'})
+            return [tag['href'] for tag in a_tags]
 
+    @classmethod
+    def salary_parse(cls, salary: str):
+        salary = salary.replace(u'\xa0', '')
 
-async def hh_parse_vacancy(session, url):
-    results = {}
-    async with session.get(url) as resp:
-        content = await resp.text()
-        results = await async_run(hh_bs_parse_dom, content)
-        results['url'] = str(resp.url).split('?')[0]
+        min_val = max_val = math.nan
+        currency = cur_type = 'none'
+        if salary != 'з/п не указана':
+            lst = salary.split(' ')
+            if lst[-1] == 'руки':
+                cur_type = 'net'
+                for _ in range(2):
+                    lst.pop()
+            else:
+                cur_type = 'gross'
+                for _ in range(3):
+                    lst.pop()
 
-    return results
+            currency = lst.pop()
+            if len(lst) == 4:
+                min_val, max_val = lst[1], lst[3]
+            elif lst[0] == 'от':
+                min_val = lst[1]
+            else:
+                max_val = lst[1]
+        return float(min_val), float(max_val), currency, cur_type
 
+    def _bs_parse_dom(self, content):
+        res = {}
+        dom = bs(content, 'html.parser')
+        title = dom.find('div', {'class': 'vacancy-title'})
+        res['name'] = title.findChildren()[0].get_text()
 
-async def hh_parse_page(session, url, params):
-    async with session.get(url, params=params) as resp:
-        content = await resp.text()
-        a_tags = bs(content, 'html.parser').find_all('a', {'class': 'bloko-link',
-                                                           'data-qa': 'vacancy-serp__vacancy-title'})
-        urls = [tag['href'] for tag in a_tags]
-        return await asyncio.gather(*[hh_parse_vacancy(session, v_url) for v_url in urls],
-                                    return_exceptions=True)
+        res['salary_min'], res['salary_max'], res['salary_currency'], res['salary_type'] = self._salary_parse(
+            title.findChildren()[1].get_text()
+        )
+        return res
 
+    async def _parse_vacancy(self, url):
+        results = {}
+        async with self.session.get(url) as resp:
+            content = await resp.text()
+            results = await async_run(self._bs_parse_dom, content)
+            results['url'] = str(resp.url).split('?')[0]
+        return results
 
-async def hh_search_and_parse(search_query, pages=10):
-    """
-    Search job offers on sites, parse and save to DB
-    :param search_query: string
-    :param pages: int, maximum number of pages
-    """
-    # hh
-    params = {'text': search_query}
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.get(hh_url, params=params) as resp:
-            params = range(0, pages)
-            res = await asyncio.gather(*[hh_parse_page(session, resp.url, {'page': param}) for param in params],
-                                       return_exceptions=True)
-            return [i for x in res for i in x]
+    async def search_and_parse(self, search_query, pages=10):
+        """
+        Search job offers on sites, parse and save to DB
+        :param search_query: string
+        :param pages: int, maximum number of pages
+        """
+        params = {'text': search_query}
+        self.session = aiohttp.ClientSession(headers=self.headers)
+        async with self.session as session:
+            async with session.get(self.search_url, params=params) as resp:
+                params = range(0, pages)
+                urls_lists = await asyncio.gather(*[self._parse_page(resp.url, {'page': param}) for param in params],
+                                                  return_exceptions=True)
+                res = await asyncio.gather(*[self._parse_vacancy(url) for x in urls_lists for url in x],
+                                           return_exceptions=False)
+                return res
 
 
 async def main(search_query, pages=10):
-    res = await hh_search_and_parse(search_query, pages)
+    hh_parser = HHruParser()
+    res = await hh_parser.search_and_parse(search_query, pages)
     print(f'found {len(res)} items')
     pprint(res)
 
