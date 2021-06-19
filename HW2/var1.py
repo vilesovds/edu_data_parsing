@@ -48,7 +48,7 @@ async def async_run(task_func, *args):
 def hh_salary_parse(salary: str):
     salary = salary.replace(u'\xa0', '')
 
-    min = max = math.nan
+    min_val = max_val = math.nan
     currency = cur_type = 'none'
     if salary != 'з/п не указана':
         lst = salary.split(' ')
@@ -63,12 +63,12 @@ def hh_salary_parse(salary: str):
 
         currency = lst.pop()
         if len(lst) == 4:
-            min, max = lst[1], lst[3]
+            min_val, max_val = lst[1], lst[3]
         elif lst[0] == 'от':
-            min = lst[1]
+            min_val = lst[1]
         else:
-            max = lst[1]
-    return float(min), float(max), currency, cur_type
+            max_val = lst[1]
+    return float(min_val), float(max_val), currency, cur_type
 
 
 def hh_bs_parse_dom(content):
