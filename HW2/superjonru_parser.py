@@ -4,7 +4,6 @@ import asyncio
 import aiohttp
 import math
 from bs4 import BeautifulSoup as bs
-from pprint import pprint
 
 
 def sj_salary_parse(salary: str):
@@ -75,7 +74,7 @@ async def sj_search_and_parse(search_query, pages=10):
     :param pages: int, maximum number of pages
     """
     search_url = "https://www.superjob.ru/vacancy/search/"
-    params = {'keyword': search_query}
+    params = {'keywords': search_query}
     async with aiohttp.ClientSession(headers=headers) as session:
         async with session.get(search_url, params=params) as resp:
             params = range(1, pages)
@@ -92,9 +91,9 @@ if __name__ == "__main__":
 
     async def main(search_query, pages=10):
         res = await sj_search_and_parse(search_query, pages)
-        # print(f'found {len(res)} items')
+        print(f'found {len(res)} items')
         pprint(res)
 
 
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main('Уборщик помощений', 10))
+    loop.run_until_complete(main('Уборщик в ресторан', 10))
