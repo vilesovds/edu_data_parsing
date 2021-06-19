@@ -36,10 +36,9 @@ def bs_parse_dom(content):
 
     res['salary_min'], res['salary_max'], res['salary_currency'], res['salary_type'], res['salary_period'] = \
         sj_salary_parse(dom.find('span', {'class': '_1OuF_ ZON4b'}).get_text())
-    # company_name = dom.find('a', {'class': 'vacancy-company-name'})
-    # if company_name:
-    #     filtered_text = company_name.get_text().replace(u'\xa0', ' ')
-    #     res['company_name'] = filtered_text
+    company_name = dom.find('h2', {'class': '_1h3Zg _2rfUm _2hCDz _2ZsgW _21a7u _2SvHc'})
+    if company_name:
+        res['company_name'] = company_name.get_text()
     return res
 
 
