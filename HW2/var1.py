@@ -12,6 +12,7 @@ Superjob и HH. Приложение должно анализировать н�
 Общий результат можно вывести с помощью dataFrame через pandas.
 """
 import math
+import sys
 
 from bs4 import BeautifulSoup as bs
 import asyncio
@@ -96,10 +97,8 @@ async def hh_parse_page(session, url, params):
     async with session.get(url, params=params) as resp:
         content = await resp.text()
         a_tags = bs(content, 'html.parser').find_all('a', {'class': 'bloko-link',
-                                                           'data-qa': 'vacancy-serp__vacancy-title'})
-        urls = [tag['href'] for tag in a_tags]
-        return await asyncio.gather(*[hh_parse_vacancy(session, v_url) for v_url in urls],
-                                    return_exceptions=True)
+                                                     'data-qa': 'vacancy-serp__vacancy-title'})
+        return [tag['href'] for tag in a_tags]
 
 
 async def hh_search_and_parse(search_query, pages=10):
@@ -113,9 +112,11 @@ async def hh_search_and_parse(search_query, pages=10):
     async with aiohttp.ClientSession(headers=headers) as session:
         async with session.get(hh_url, params=params) as resp:
             params = range(0, pages)
-            res = await asyncio.gather(*[hh_parse_page(session, resp.url, {'page': param}) for param in params],
+            urls = await asyncio.gather(*[hh_parse_page(session, resp.url, {'page': param}) for param in params],
+                                        return_exceptions=True)
+            res = await asyncio.gather(*[hh_parse_vacancy(session, url) for x in urls for url in x],
                                        return_exceptions=True)
-            return [i for x in res for i in x]
+            return res
 
 
 async def main(search_query, pages=10):
