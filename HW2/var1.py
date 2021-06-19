@@ -12,37 +12,19 @@ Superjob и HH. Приложение должно анализировать н�
 Общий результат можно вывести с помощью dataFrame через pandas.
 """
 import math
-import sys
 
 from bs4 import BeautifulSoup as bs
 import asyncio
 import aiohttp
-from concurrent.futures import ProcessPoolExecutor
-from functools import partial
+from async_run import async_run
 from pprint import pprint
 
-# executor = ProcessPoolExecutor(max_workers=4)
-executor = ProcessPoolExecutor()
 
 superjob_url = "https://www.superjob.ru/"
 hh_url = "https://hh.ru/search/vacancy"
 
 headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
                          'Chrome/91.0.4472.106 Safari/537.36'}
-
-
-async def async_run(task_func, *args):
-    """
-    Run task in executor as async coroutine
-    :param task_func: name of function
-    :param args: arguments
-    :return function call results
-    """
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        executor,
-        partial(task_func, *args)
-    )
 
 
 def hh_salary_parse(salary: str):
