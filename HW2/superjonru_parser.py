@@ -11,7 +11,7 @@ def sj_salary_parse(salary: str):
     min_val = max_val = math.nan
     currency = cur_type = cur_time_period = 'none'
     if salary != 'По договорённости':
-        cur_type = 'unknown'
+        cur_type = 'gross'
         lst = salary.split(' ')
         currency, cur_time_period = lst.pop().split('/')
         if lst[0] == 'от':
@@ -44,45 +44,55 @@ def bs_parse_dom(content):
 
 async def parse_vacancy(session, url):
     results = {}
-    async with session.get(url) as resp:
-        content = await resp.text()
-        results = await async_run(bs_parse_dom, content)
-        results['url'] = str(resp.url).split('?')[0]
-        results['site'] = 'superjob.ru'
-
+    try:
+        async with session.get(url) as resp:
+            content = await resp.text()
+            results = await async_run(bs_parse_dom, content)
+            results['url'] = str(resp.url).split('?')[0]
+            results['site'] = 'superjob.ru'
+    except Exception as err:
+        print(f'error: {err}')
     return results
 
 
 async def parse_page(session, url, params):
-    pages = []
-    async with session.get(url, params=params) as resp:
-        content = await resp.text()
-        items = bs(content, 'html.parser').find_all('div', {'class': "f-test-search-result-item"})
+    urls = []
+    try:
+        async with session.get(url, params=params) as resp:
+            content = await resp.text()
+            items = bs(content, 'html.parser').find_all('div', {'class': "f-test-search-result-item"})
+            for item in items:
+                a_tag = item.find('a')
+                if a_tag and a_tag['href'].startswith('/vakansii'):
+                    urls.append('https://www.superjob.ru' + a_tag['href'])
+    except Exception as err:
+        print(f'error: {err}')
+    return urls
 
-        for item in items:
-            a_tag = item.find('a')
-            if a_tag and a_tag['href'].startswith('/vakansii'):
-                pages.append('https://www.superjob.ru' + a_tag['href'])
-        return pages
 
-
-async def sj_search_and_parse(search_query, pages=10):
+async def sj_search_and_parse(search_query, pages=10, connections_limit=0):
     """
     Search job offers on sites, parse and save to DB
     :param search_query: string
     :param pages: int, maximum number of pages
+    :param connections_limit: limit connections if needed
     """
     search_url = "https://www.superjob.ru/vacancy/search/"
     params = {'keywords': search_query}
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.get(search_url, params=params) as resp:
-            params = range(1, pages)
-            await resp.read()
-            urls = await asyncio.gather(*[parse_page(session, resp.url, {'page': param}) for param in params],
-                                        return_exceptions=True)
-            res = await asyncio.gather(*[parse_vacancy(session, url) for x in urls for url in x],
-                                       return_exceptions=True)
-            return res
+    try:
+        conn = aiohttp.TCPConnector(limit=connections_limit)
+        async with aiohttp.ClientSession(headers=headers, connector=conn) as session:
+            async with session.get(search_url, params=params) as resp:
+                params = range(1, pages)
+                await resp.read()
+                urls = await asyncio.gather(*[parse_page(session, resp.url, {'page': param}) for param in params],
+                                            return_exceptions=False)
+
+                res = await asyncio.gather(*[parse_vacancy(session, url) for x in urls for url in x if url],
+                                           return_exceptions=False)
+                return res
+    except Exception as err:
+        print(f'error : {err}')
 
 if __name__ == "__main__":
     from pprint import pprint

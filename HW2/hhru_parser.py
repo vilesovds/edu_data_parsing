@@ -50,36 +50,44 @@ def hh_bs_parse_dom(content):
 
 async def parse_vacancy(session, url):
     results = {}
-    async with session.get(url) as resp:
-        content = await resp.text()
-        results = await async_run(hh_bs_parse_dom, content)
-        results['url'] = str(resp.url).split('?')[0]
-        results['site'] = 'hh.ru'
-
+    try:
+        async with session.get(url) as resp:
+            if resp.ok:
+                content = await resp.text()
+                results = await async_run(hh_bs_parse_dom, content)
+                results['url'] = str(resp.url).split('?')[0]
+                results['site'] = 'hh.ru'
+    except Exception as err:
+        print(f'error: {err}')
     return results
 
 
 async def parse_page(session, url, params):
     async with session.get(url, params=params) as resp:
-        content = await resp.text()
-        a_tags = bs(content, 'html.parser').find_all('a', {'class': 'bloko-link',
-                                                     'data-qa': 'vacancy-serp__vacancy-title'})
-        return [tag['href'] for tag in a_tags]
+        if resp.ok:
+            content = await resp.text()
+            a_tags = bs(content, 'html.parser').find_all('a', {'class': 'bloko-link',
+                                                         'data-qa': 'vacancy-serp__vacancy-title'})
+            return [tag['href'] for tag in a_tags]
+        else:
+            return []
 
 
-async def hh_search_and_parse(search_query, pages=10):
+async def hh_search_and_parse(search_query, pages=10, connections_limit=0):
     """
     Search job offers on sites, parse and save to DB
     :param search_query: string
     :param pages: int, maximum number of pages
+    :param connections_limit: limit connections if needed
     """
     search_url = "https://hh.ru/search/vacancy"
     params = {'text': search_query}
-    async with aiohttp.ClientSession(headers=headers) as session:
+    conn = aiohttp.TCPConnector(limit=connections_limit)
+    async with aiohttp.ClientSession(headers=headers, connector=conn) as session:
         async with session.get(search_url, params=params) as resp:
             params = range(0, pages)
             urls = await asyncio.gather(*[parse_page(session, resp.url, {'page': param}) for param in params],
-                                        return_exceptions=True)
-            res = await asyncio.gather(*[parse_vacancy(session, url) for x in urls for url in x],
-                                       return_exceptions=True)
+                                        return_exceptions=False)
+            res = await asyncio.gather(*[parse_vacancy(session, url) for x in urls for url in x if url],
+                                       return_exceptions=False)
             return res
