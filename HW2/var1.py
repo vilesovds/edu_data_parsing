@@ -14,10 +14,6 @@ Superjob и HH. Приложение должно анализировать н�
 from hhru_parser import hh_search_and_parse
 from superjonru_parser import sj_search_and_parse
 import asyncio
-from pprint import pprint
-
-
-superjob_url = "https://www.superjob.ru/"
 
 
 if __name__ == "__main__":
