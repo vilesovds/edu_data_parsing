@@ -7,7 +7,7 @@
 # useful for handling different item types with a single interface
 from itemadapter import ItemAdapter
 from pymongo import MongoClient
-
+import math
 
 class JobparserPipeline(object):
     def __init__(self):
@@ -16,6 +16,38 @@ class JobparserPipeline(object):
 
     def process_item(self, item, spider):
         collection = self.mongobase[spider.name]
+        item['url'] = item['url'].split('?')[0]
+        s_min, s_max, s_cur, s_type = self.hh_salary_parse(''.join(item['salary']))
+        item['salary_min'] = s_min
+        item['salary_max'] = s_max
+        item['salary_currency'] = s_cur
+        item['salary_type'] = s_type
+        item.pop('salary', None)
         collection.insert_one(item)
         return item
+
+    def hh_salary_parse(self, salary: str):
+        salary = salary.replace(u'\xa0', '')
+
+        min_val = max_val = math.nan
+        currency = cur_type = 'none'
+        if salary != 'з/п не указана':
+            lst = salary.split(' ')
+            if lst[-1] == 'руки':
+                cur_type = 'net'
+                for _ in range(2):
+                    lst.pop()
+            else:
+                cur_type = 'gross'
+                for _ in range(3):
+                    lst.pop()
+
+            currency = lst.pop()
+            if len(lst) == 4:
+                min_val, max_val = lst[1], lst[3]
+            elif lst[0] == 'от':
+                min_val = lst[1]
+            else:
+                max_val = lst[1]
+        return float(min_val), float(max_val), currency, cur_type
 
