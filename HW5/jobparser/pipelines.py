@@ -13,8 +13,8 @@ import math
 class JobparserPipeline(object):
     def __init__(self):
         client = MongoClient('localhost', 27017)
-        self.mongobase = client.vacanscies
-        self.salaryparsers = {'sjru': self.sj_salary_parse}
+        self.mongobase = client.vacancies
+        self.salaryparsers = {'sjru': self.sj_salary_parse, 'hhru': self.hh_salary_parse}
 
     def process_item(self, item, spider):
         collection = self.mongobase[spider.name]
